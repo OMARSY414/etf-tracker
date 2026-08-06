@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>定投跟踪工具</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 { font-size: 1.8em; margin-bottom: 10px; }
+        .header .subtitle { opacity: 0.8; font-size: 0.95em; }
+        
+        .input-section {
+            padding: 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .input-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .input-group label {
+            font-weight: 600;
+            color: #333;
+            font-size: 0.9em;
+        }
+        .input-group input, .input-group select {
+            padding: 10px 14px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1em;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .input-group input:focus, .input-group select:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+        }
+        .input-group .hint {
+            font-size: 0.8em;
+            color: #888;
+        }
+        
+        .btn-container {
+            text-align: center;
+            margin-top: 25px;
+        }
+        .btn {
+            padding: 12px 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+            font-size: 1.1em;
+            display: none;
+        }
+        .loading.show { display: block; }
+        
+        .error {
+            text-align: center;
+            padding: 20px;
+            color: #ef4444;
+            font-size: 1em;
+            display: none;
+        }
+        .error.show { display: block; }
+        
+        .result-section {
+            display: none;
+        }
+        .result-section.show { display: block; }
+        
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 20px 25px;
+            background: #f8f9fa;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+        }
+        .stat-card {
+            background: #fff;
+            border-radius: 10px;
+            padding: 15px 12px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            flex: 1;
+            min-width: 0;
+        }
+        .stat-card .label { color: #666; font-size: 0.8em; margin-bottom: 4px; white-space: nowrap; }
+        .stat-card .value { font-size: 1.2em; font-weight: 700; color: #1a1a1a; white-space: nowrap; }
+        .stat-card .value.cagr { color: #22c55e; }
+        
+        .chart-container { padding: 25px; height: 500px; }
+        .footer {
+            padding: 15px 25px;
+            background: #f8f9fa;
+            text-align: center;
+            color: #666;
+            font-size: 0.85em;
+        }
+        
+        .examples {
+            margin-top: 15px;
+            padding: 15px;
+            background: #fff;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+        .examples h4 {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 10px;
+        }
+        .example-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .example-tag {
+            padding: 5px 12px;
+            background: #f0f2f5;
+            border-radius: 15px;
+            font-size: 0.85em;
+            color: #333;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .example-tag:hover {
+            background: #667eea;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>定投跟踪工具</h1>
+            <p class="subtitle">支持沪深港三市所有股票，输入参数自动生成定投收益分析</p>
+        </div>
+        
+        <div class="input-section">
+            <div class="input-grid">
+                <div class="input-group">
+                    <label>股票代码</label>
+                    <input type="text" id="stockCode" placeholder="如 513050 或 00700" value="513050">
+                    <span class="hint">上海：sh+代码 | 深圳：sz+代码 | 港股：hk+代码</span>
+                </div>
+                <div class="input-group">
+                    <label>开始日期</label>
+                    <input type="date" id="startDate" value="2021-12-16">
+                </div>
+                <div class="input-group">
+                    <label>截止日期</label>
+                    <input type="date" id="endDate">
+                </div>
+                <div class="input-group">
+                    <label>每日定投金额（元）</label>
+                    <input type="number" id="dailyAmount" value="300" min="1" step="100">
+                </div>
+            </div>
+            
+            <div class="examples">
+                <h4>常用股票示例（点击填入）：</h4>
+                <div class="example-tags">
+                    <span class="example-tag" data-code="sh513050">513050 中概互联网ETF</span>
+                    <span class="example-tag" data-code="sh510300">510300 沪深300ETF</span>
+                    <span class="example-tag" data-code="sh510500">510500 中证500ETF</span>
+                    <span class="example-tag" data-code="sz159915">159915 创业板ETF</span>
+                    <span class="example-tag" data-code="sh518880">518880 黄金ETF</span>
+                    <span class="example-tag" data-code="hk00700">00700 腾讯控股</span>
+                    <span class="example-tag" data-code="hk09988">09988 阿里巴巴</span>
+                    <span class="example-tag" data-code="hk03690">03690 美团</span>
+                </div>
+            </div>
+            
+            <div class="btn-container">
+                <button class="btn" id="generateBtn" onclick="generate()">生成定投分析</button>
+            </div>
+        </div>
+        
+        <div class="loading" id="loading">正在获取数据并计算，请稍候...</div>
+        <div class="error" id="error"></div>
+        
+        <div class="result-section" id="resultSection">
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="label">累计投入</div>
+                    <div class="value" id="statCumInvest">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">投资组合市值</div>
+                    <div class="value" id="statMarketValue">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">累计收益率</div>
+                    <div class="value" id="statReturn">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">累计份额</div>
+                    <div class="value" id="statShares">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">最新收盘价</div>
+                    <div class="value" id="statPrice">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">年化复合回报率</div>
+                    <div class="value cagr" id="statCagr">-</div>
+                </div>
+            </div>
+            
+            <div class="chart-container">
+                <canvas id="chart"></canvas>
+            </div>
+        </div>
+        
+        <div class="footer">
+            数据来源：腾讯财经（A股使用前复权，港股自动检测分红日平滑处理）| 本工具仅供参考，不构成投资建议
+        </div>
+    </div>
+
+    <script>
+        // 设置默认截止日期为今天
+        document.getElementById('endDate').valueAsDate = new Date();
+        
+        // 示例标签点击事件
+        document.querySelectorAll('.example-tag').forEach(tag => {
+            tag.addEventListener('click', () => {
+                document.getElementById('stockCode').value = tag.dataset.code;
+            });
+        });
+        
+        let chart = null;
+
+        async function fetchKlineData(code, startDate, endDate) {
+            // 处理股票代码格式
+            let fullCode = code.toLowerCase();
+            if (!fullCode.startsWith('sh') && !fullCode.startsWith('sz') && !fullCode.startsWith('hk')) {
+                if (/^0\d{4}$/.test(code) || /^\d{5}$/.test(code)) fullCode = 'hk' + code;
+                else if (code.startsWith('6') || code.startsWith('5')) fullCode = 'sh' + code;
+                else if (code.startsWith('0') || code.startsWith('3') || code.startsWith('1')) fullCode = 'sz' + code;
+                else throw new Error('无法识别股票代码，请使用 sh/sz/hk 前缀');
+            }
+
+            // 分段请求原始数据和前复权数据
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const rawDays = [];
+            const qfqDays = [];
+            const MAX_PER_REQUEST = 1400;
+
+            let currentStart = new Date(start);
+            while (currentStart <= end) {
+                let currentEnd = new Date(currentStart);
+                currentEnd.setFullYear(currentEnd.getFullYear() + 2);
+                if (currentEnd > end) currentEnd = new Date(end);
+                const startStr = currentStart.toISOString().split('T')[0];
+                const endStr = currentEnd.toISOString().split('T')[0];
+
+                // 使用CORS代理（避免跨域问题）
+                const corsProxy = 'https://corsproxy.io/?';
+                const rawUrl = `${corsProxy}${encodeURIComponent(`https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${fullCode},day,${startStr},${endStr},${MAX_PER_REQUEST},`)}`;
+                const rawResp = await fetch(rawUrl);
+                const rawData = await rawResp.json();
+                const rawStock = (rawData.data || {})[fullCode] || {};
+                const raw = rawStock.day || rawStock.qfqday || [];
+                if (raw.length > 0) rawDays.push(...raw);
+
+                // 请求前复权数据
+                const qfqUrl = `${corsProxy}${encodeURIComponent(`https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${fullCode},day,${startStr},${endStr},${MAX_PER_REQUEST},qfq`)}`;
+                const qfqResp = await fetch(qfqUrl);
+                const qfqData = await qfqResp.json();
+                const qfqStock = (qfqData.data || {})[fullCode] || {};
+                const qfq = qfqStock.qfqday || qfqStock.day || [];
+                if (qfq.length > 0) qfqDays.push(...qfq);
+
+                currentStart = new Date(currentEnd);
+                currentStart.setDate(currentStart.getDate() + 1);
+            }
+
+            if (rawDays.length === 0) throw new Error('未获取到数据，请检查股票代码和日期范围');
+
+            // 去重排序
+            const dedup = (days) => {
+                const seen = new Set();
+                const unique = [];
+                for (const d of days) {
+                    if (!seen.has(d[0])) { seen.add(d[0]); unique.push(d); }
+                }
+                unique.sort((a, b) => a[0].localeCompare(b[0]));
+                return unique.filter(d => { const dt = new Date(d[0]); return dt >= start && dt <= end; });
+            };
+
+            const rawUnique = dedup(rawDays);
+            const qfqUnique = dedup(qfqDays);
+
+            // 判断是否有复权数据（A股有，港股可能没有）
+            const hasAdjustment = qfqUnique.length > 0 && 
+                rawUnique.length > 0 && 
+                Math.abs(parseFloat(rawUnique[0][2]) - parseFloat(qfqUnique[0][2])) > 0.01;
+
+            // 构建结果
+            if (hasAdjustment) {
+                // 有复权数据：用前复权价格计算，避免分红断崖
+                return rawUnique.map((rawDay, i) => {
+                    const qfqDay = qfqUnique[i];
+                    const rawClose = parseFloat(rawDay[2]);
+                    const qfqClose = qfqDay ? parseFloat(qfqDay[2]) : rawClose;
+                    return {
+                        date: rawDay[0],
+                        close: rawClose,
+                        trPrice: qfqClose  // 用前复权价格作为总回报价格
+                    };
+                });
+            } else {
+                // 无复权数据（港股等）：用原始价格，检测分红日并平滑
+                const prices = rawUnique.map(d => ({
+                    date: d[0],
+                    close: parseFloat(d[2]),
+                    trPrice: parseFloat(d[2])
+                }));
+
+                // 检测分红日并构建连续价格
+                for (let i = 1; i < prices.length; i++) {
+                    const chg = (prices[i].close - prices[i-1].close) / prices[i-1].close;
+                    if (chg < -0.02) {  // 跌幅超过2%可能是分红
+                        // 保持总回报价格连续（不跟随下跌）
+                        prices[i].trPrice = prices[i-1].trPrice * (1 + Math.max(chg + 0.03, 0));
+                    }
+                }
+                return prices;
+            }
+        }
+
+        function calculateDCA(prices, dailyAmount) {
+            let cumShares = 0;
+            let cumInvest = 0;
+            const results = [];
+
+            for (let i = 0; i < prices.length; i++) {
+                // 用总回报价格买入（含分红再投资）
+                const price = prices[i].trPrice;
+                const dailyShares = dailyAmount / price;
+                cumShares += dailyShares;
+                cumInvest += dailyAmount;
+                const marketValue = cumShares * price;
+
+                results.push({
+                    date: prices[i].date,
+                    close: prices[i].close,
+                    trPrice: prices[i].trPrice,
+                    cumInvest: cumInvest,
+                    marketValue: marketValue,
+                    cumShares: cumShares
+                });
+            }
+
+            return results;
+        }
+        
+        async function generate() {
+            const code = document.getElementById('stockCode').value.trim();
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const dailyAmount = parseFloat(document.getElementById('dailyAmount').value);
+            
+            if (!code || !startDate || !endDate || !dailyAmount) {
+                showError('请填写完整的参数');
+                return;
+            }
+            
+            if (new Date(startDate) >= new Date(endDate)) {
+                showError('开始日期必须早于截止日期');
+                return;
+            }
+            
+            const btn = document.getElementById('generateBtn');
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const result = document.getElementById('resultSection');
+            
+            btn.disabled = true;
+            loading.classList.add('show');
+            error.classList.remove('show');
+            result.classList.remove('show');
+            
+            try {
+                const prices = await fetchKlineData(code, startDate, endDate);
+                const data = calculateDCA(prices, dailyAmount);
+                
+                updateStats(data);
+                updateChart(data);
+                
+                result.classList.add('show');
+            } catch (err) {
+                showError(err.message);
+            } finally {
+                btn.disabled = false;
+                loading.classList.remove('show');
+            }
+        }
+        
+        function showError(msg) {
+            const error = document.getElementById('error');
+            error.textContent = '❌ ' + msg;
+            error.classList.add('show');
+        }
+        
+        function updateStats(data) {
+            const last = data[data.length - 1];
+            const returnRate = (last.marketValue / last.cumInvest - 1) * 100;
+            const years = data.length / 252;
+            const cagr = (Math.pow(last.marketValue / last.cumInvest, 1 / years) - 1) * 100;
+
+            document.getElementById('statCumInvest').textContent = '¥' + last.cumInvest.toLocaleString();
+            document.getElementById('statMarketValue').textContent = '¥' + last.marketValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            document.getElementById('statReturn').textContent = (returnRate >= 0 ? '+' : '') + returnRate.toFixed(2) + '%';
+            document.getElementById('statShares').textContent = last.cumShares.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            document.getElementById('statPrice').textContent = '¥' + last.close.toFixed(4);
+            document.getElementById('statCagr').textContent = (cagr >= 0 ? '+' : '') + cagr.toFixed(2) + '%';
+        }
+
+        function updateChart(data) {
+            const dates = data.map(d => d.date);
+            const cumInvests = data.map(d => d.cumInvest);
+            const marketValues = data.map(d => Math.round(d.marketValue * 100) / 100);
+            const prices = data.map(d => d.close);
+            
+            const datasets = [
+                {
+                    label: '累计投入',
+                    data: cumInvests,
+                    borderColor: '#667eea',
+                    backgroundColor: 'rgba(102, 126, 234, 0.05)',
+                    yAxisID: 'y',
+                    tension: 0.4,
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    fill: false
+                },
+                {
+                    label: '投资组合市值',
+                    data: marketValues,
+                    borderColor: '#22c55e',
+                    backgroundColor: 'rgba(34, 197, 94, 0.05)',
+                    yAxisID: 'y',
+                    tension: 0.4,
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    fill: false
+                },
+                {
+                    label: '收盘价',
+                    data: prices,
+                    borderColor: '#fdba74',
+                    backgroundColor: 'rgba(253, 186, 116, 0.1)',
+                    yAxisID: 'y1',
+                    tension: 0.4,
+                    borderWidth: 2.5,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    fill: false
+                }
+            ];
+            
+            if (chart) {
+                chart.data.labels = dates;
+                chart.data.datasets = datasets;
+                chart.update();
+            } else {
+                const ctx = document.getElementById('chart').getContext('2d');
+                chart = new Chart(ctx, {
+                    type: 'line',
+                    data: { labels: dates, datasets: datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        animation: { duration: 300 },
+                        plugins: {
+                            title: { display: true, text: '定投累计投入 VS 投资组合市值 VS 收盘价', font: { size: 14 } },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.dataset.label || '';
+                                        if (context.dataset.yAxisID === 'y1') {
+                                            return label + ': ¥' + context.parsed.y.toFixed(4);
+                                        }
+                                        return label + ': ¥' + context.parsed.y.toLocaleString();
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { ticks: { maxTicksLimit: 12, maxRotation: 45 } },
+                            y: {
+                                type: 'linear', display: true, position: 'left',
+                                title: { display: true, text: '金额（元）' }
+                            },
+                            y1: {
+                                type: 'linear', display: true, position: 'right',
+                                title: { display: true, text: '价格' },
+                                grid: { drawOnChartArea: false }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+    </script>
+</body>
+</html>
