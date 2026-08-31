@@ -306,9 +306,9 @@
                 const startStr = currentStart.toISOString().split('T')[0];
                 const endStr = currentEnd.toISOString().split('T')[0];
 
-                // 使用CORS代理（避免跨域问题）
-                const corsProxy = 'https://corsproxy.io/?';
-                const rawUrl = `${corsProxy}${encodeURIComponent(`https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${fullCode},day,${startStr},${endStr},${MAX_PER_REQUEST},`)}`;
+                // 通过Vercel后端代理请求（解决GitHub Pages跨域问题）
+                const VERCEL_API = 'https://etf-tracker-nu.vercel.app';
+                const rawUrl = `${VERCEL_API}/api/proxy?code=${fullCode}&start=${startStr}&end=${endStr}`;
                 const rawResp = await fetch(rawUrl);
                 const rawData = await rawResp.json();
                 const rawStock = (rawData.data || {})[fullCode] || {};
@@ -316,7 +316,7 @@
                 if (raw.length > 0) rawDays.push(...raw);
 
                 // 请求前复权数据
-                const qfqUrl = `${corsProxy}${encodeURIComponent(`https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${fullCode},day,${startStr},${endStr},${MAX_PER_REQUEST},qfq`)}`;
+                const qfqUrl = `${VERCEL_API}/api/proxy?code=${fullCode}&start=${startStr}&end=${endStr}&type=qfq`;
                 const qfqResp = await fetch(qfqUrl);
                 const qfqData = await qfqResp.json();
                 const qfqStock = (qfqData.data || {})[fullCode] || {};
@@ -436,13 +436,17 @@
             try {
                 const prices = await fetchKlineData(code, startDate, endDate);
                 const data = calculateDCA(prices, dailyAmount);
-                
+
                 updateStats(data);
                 updateChart(data);
-                
+
                 result.classList.add('show');
             } catch (err) {
-                showError(err.message);
+                if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+                    showError('网络连接失败，请检查网络后重试。如果问题持续，可能是Vercel后端服务暂时不可用。');
+                } else {
+                    showError(err.message);
+                }
             } finally {
                 btn.disabled = false;
                 loading.classList.remove('show');
