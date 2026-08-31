@@ -282,103 +282,42 @@
         let chart = null;
 
         async function fetchKlineData(code, startDate, endDate) {
-            // 处理股票代码格式
             let fullCode = code.toLowerCase();
+            let market = 1, stockCode = code;
             if (!fullCode.startsWith('sh') && !fullCode.startsWith('sz') && !fullCode.startsWith('hk')) {
-                if (/^0\d{4}$/.test(code) || /^\d{5}$/.test(code)) fullCode = 'hk' + code;
-                else if (code.startsWith('6') || code.startsWith('5')) fullCode = 'sh' + code;
-                else if (code.startsWith('0') || code.startsWith('3') || code.startsWith('1')) fullCode = 'sz' + code;
-                else throw new Error('无法识别股票代码，请使用 sh/sz/hk 前缀');
-            }
-
-            // 分段请求原始数据和前复权数据
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-            const rawDays = [];
-            const qfqDays = [];
-            const MAX_PER_REQUEST = 1400;
-
-            let currentStart = new Date(start);
-            while (currentStart <= end) {
-                let currentEnd = new Date(currentStart);
-                currentEnd.setFullYear(currentEnd.getFullYear() + 2);
-                if (currentEnd > end) currentEnd = new Date(end);
-                const startStr = currentStart.toISOString().split('T')[0];
-                const endStr = currentEnd.toISOString().split('T')[0];
-
-                // 通过Vercel后端代理请求（解决GitHub Pages跨域问题）
-                const VERCEL_API = 'https://etf-tracker-nu.vercel.app';
-                const rawUrl = `${VERCEL_API}/api/proxy?code=${fullCode}&start=${startStr}&end=${endStr}`;
-                const rawResp = await fetch(rawUrl);
-                const rawData = await rawResp.json();
-                const rawStock = (rawData.data || {})[fullCode] || {};
-                const raw = rawStock.day || rawStock.qfqday || [];
-                if (raw.length > 0) rawDays.push(...raw);
-
-                // 请求前复权数据
-                const qfqUrl = `${VERCEL_API}/api/proxy?code=${fullCode}&start=${startStr}&end=${endStr}&type=qfq`;
-                const qfqResp = await fetch(qfqUrl);
-                const qfqData = await qfqResp.json();
-                const qfqStock = (qfqData.data || {})[fullCode] || {};
-                const qfq = qfqStock.qfqday || qfqStock.day || [];
-                if (qfq.length > 0) qfqDays.push(...qfq);
-
-                currentStart = new Date(currentEnd);
-                currentStart.setDate(currentStart.getDate() + 1);
-            }
-
-            if (rawDays.length === 0) throw new Error('未获取到数据，请检查股票代码和日期范围');
-
-            // 去重排序
-            const dedup = (days) => {
-                const seen = new Set();
-                const unique = [];
-                for (const d of days) {
-                    if (!seen.has(d[0])) { seen.add(d[0]); unique.push(d); }
-                }
-                unique.sort((a, b) => a[0].localeCompare(b[0]));
-                return unique.filter(d => { const dt = new Date(d[0]); return dt >= start && dt <= end; });
-            };
-
-            const rawUnique = dedup(rawDays);
-            const qfqUnique = dedup(qfqDays);
-
-            // 判断是否有复权数据（A股有，港股可能没有）
-            const hasAdjustment = qfqUnique.length > 0 && 
-                rawUnique.length > 0 && 
-                Math.abs(parseFloat(rawUnique[0][2]) - parseFloat(qfqUnique[0][2])) > 0.01;
-
-            // 构建结果
-            if (hasAdjustment) {
-                // 有复权数据：用前复权价格计算，避免分红断崖
-                return rawUnique.map((rawDay, i) => {
-                    const qfqDay = qfqUnique[i];
-                    const rawClose = parseFloat(rawDay[2]);
-                    const qfqClose = qfqDay ? parseFloat(qfqDay[2]) : rawClose;
-                    return {
-                        date: rawDay[0],
-                        close: rawClose,
-                        trPrice: qfqClose  // 用前复权价格作为总回报价格
-                    };
-                });
+                if (/^0\d{4}$/.test(code) || /^\d{5}$/.test(code)) { fullCode = 'hk' + code; market = 116; }
+                else if (code.startsWith('6') || code.startsWith('5')) { fullCode = 'sh' + code; market = 1; }
+                else if (code.startsWith('0') || code.startsWith('3') || code.startsWith('1')) { fullCode = 'sz' + code; market = 0; }
+                else throw new Error('无法识别股票代码');
             } else {
-                // 无复权数据（港股等）：用原始价格，检测分红日并平滑
-                const prices = rawUnique.map(d => ({
-                    date: d[0],
-                    close: parseFloat(d[2]),
-                    trPrice: parseFloat(d[2])
-                }));
+                if (fullCode.startsWith('sh')) { market = 1; stockCode = code.replace('sh',''); }
+                else if (fullCode.startsWith('sz')) { market = 0; stockCode = code.replace('sz',''); }
+                else if (fullCode.startsWith('hk')) { market = 116; stockCode = code.replace('hk',''); }
+            }
+            const secid = market + '.' + stockCode;
+            const beg = startDate.replace(/-/g,''), end = endDate.replace(/-/g,'');
+            const qfqUrl = 'https://push2his.eastmoney.com/api/qt/stock/kline/get?secid='+secid+'&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=1&beg='+beg+'&end='+end;
+            const rawUrl = 'https://push2his.eastmoney.com/api/qt/stock/kline/get?secid='+secid+'&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=0&beg='+beg+'&end='+end;
+            const [qfqResp, rawResp] = await Promise.all([fetch(qfqUrl), fetch(rawUrl)]);
+            const qfqData = await qfqResp.json(), rawData = await rawResp.json();
+            const qfqKlines = (qfqData.data&&qfqData.data.klines)||[], rawKlines = (rawData.data&&rawData.data.klines)||[];
+            if (rawKlines.length === 0) throw new Error('未获取到数据，请检查股票代码和日期范围');
+            const parse = k => { const p=k.split(','); return {date:p[0], close:parseFloat(p[2])}; };
+            const rawDays = rawKlines.map(parse), qfqDays = qfqKlines.map(parse);
 
-                // 检测分红日并构建连续价格
-                for (let i = 1; i < prices.length; i++) {
-                    const chg = (prices[i].close - prices[i-1].close) / prices[i-1].close;
-                    if (chg < -0.02) {  // 跌幅超过2%可能是分红
-                        // 保持总回报价格连续（不跟随下跌）
-                        prices[i].trPrice = prices[i-1].trPrice * (1 + Math.max(chg + 0.03, 0));
-                    }
+            // 判断是否有复权数据
+            const hasAdj = qfqDays.length>0 && rawDays.length>0 && Math.abs(rawDays[0].close-qfqDays[0].close)>0.01;
+            if (hasAdj) {
+                return rawDays.map((r,i) => ({date:r.date, close:r.close, trPrice:qfqDays[i]?qfqDays[i].close:r.close}));
+            } else {
+                const prices = rawDays.map(d => ({date:d.date, close:d.close, trPrice:d.close}));
+                for (let i=1;i<prices.length;i++) {
+                    const chg=(prices[i].close-prices[i-1].close)/prices[i-1].close;
+                    if (chg<-0.02) prices[i].trPrice=prices[i-1].trPrice*(1+Math.max(chg+0.03,0));
                 }
                 return prices;
             }
+        }
         }
 
         function calculateDCA(prices, dailyAmount) {
